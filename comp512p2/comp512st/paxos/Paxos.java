@@ -7,6 +7,9 @@ import comp512.utils.*;
 
 // Any other imports that you may need.
 import java.io.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Queue;
 import java.util.logging.*;
 import java.net.UnknownHostException;
 
@@ -20,20 +23,59 @@ public class Paxos
 {
 	GCL gcl;
 	FailCheck failCheck;
+    static volatile int  hostCount=0;
+    static volatile int agreedUpon;
+    static volatile int potentialAgreement;
+    int promises=0;
+    Queue<String[]> promiseMessages = new ArrayDeque<>();
 
 	public Paxos(String myProcess, String[] allGroupProcesses, Logger logger, FailCheck failCheck) throws IOException, UnknownHostException
 	{
 		// Rember to call the failCheck.checkFailure(..) with appropriate arguments throughout your Paxos code to force fail points if necessary.
 		this.failCheck = failCheck;
+        hostCount++;
 
 		// Initialize the GCL communication system as well as anything else you need to.
 		this.gcl = new GCL(myProcess, allGroupProcesses, null, logger) ;
 
 	}
 
+    private void propose(int potentialAgreement){
+        gcl.broadcastMsg("Propose," + potentialAgreement);
+
+    }
+
 	// This is what the application layer is going to call to send a message/value, such as the player and the move
-	public void broadcastTOMsg(Object val)
-	{
+	public void broadcastTOMsg(Object val) throws InterruptedException {
+        potentialAgreement++;
+        promises=0;
+        propose(potentialAgreement);
+        try{
+        while(promises<hostCount/2){
+            if(!promiseMessages.isEmpty()){
+                var msg = promiseMessages.poll();
+                while(Integer.parseInt(msg[1])<potentialAgreement){
+                    msg = promiseMessages.poll();
+                }
+                if(Integer.parseInt(msg[1])>potentialAgreement){
+                    return;
+                }
+                promises++;
+                continue;
+
+            }
+            var msg = gcl.readGCMessage().toString().split(",");
+            if(msg[0].equals("Promise")){
+                promises++;
+            }
+            else{
+                promiseMessages.add(msg);
+            }
+
+        }}
+        catch(InterruptedException e){
+            System.out.println("Error reading message");
+        }
 		// This is just a place holder.
 		// Extend this to build whatever Paxos logic you need to make sure the messaging system is total order.
 		// Here you will have to ensure that the CALL BLOCKS, and is returned ONLY when a majority (and immediately upon majority) of processes have accepted the value.
